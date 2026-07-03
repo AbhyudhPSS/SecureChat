@@ -31,10 +31,14 @@ export async function upsertDevice(
       identityPublicKey: device.identityPublicKey,
       deliveryToken: randomBytes(24).toString('base64url'), // for sealed-sender delivery
     },
+    // NOTE: identity/signing public keys are deliberately NOT updated for an
+    // existing device. They are immutable for the life of a (userId, registrationId)
+    // device — a genuine key rotation means a reinstall, which generates a fresh
+    // random registrationId and therefore a new device row. Allowing overwrite here
+    // would let a password-only login silently swap a user's identity key, enabling
+    // a server-assisted MITM that safety numbers wouldn't flag until re-verified.
     update: {
       name: device.deviceName,
-      signingPublicKey: device.signingPublicKey,
-      identityPublicKey: device.identityPublicKey,
       lastSeenAt: new Date(),
     },
   });

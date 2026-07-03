@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { DeviceBundle, UserKeyBundles } from '@securechat/types';
 import { prisma } from '../db.js';
+import { isProd } from '../config.js';
 import { authenticate } from '../auth/middleware.js';
 
 export async function keyRoutes(app: FastifyInstance): Promise<void> {
@@ -12,7 +13,13 @@ export async function keyRoutes(app: FastifyInstance): Promise<void> {
    * one-time prekey per device (deleted so it is never reused). X3DH still works
    * if a device has run out of one-time prekeys (falls back to 3-DH).
    */
-  app.get<{ Params: { userId: string } }>('/keys/:userId/bundle', async (request, reply) => {
+  app.get<{ Params: { userId: string } }>(
+    '/keys/:userId/bundle',
+    // Each call CONSUMES a one-time prekey per device; without a tight limit an
+    // attacker could drain a victim's prekeys and force the weaker 3-DH fallback
+    // (forward-secrecy downgrade). Strict in prod, relaxed for dev/test suites.
+    { config: { rateLimit: { max: isProd ? 30 : 100_000, timeWindow: '1 minute' } } },
+    async (request, reply) => {
     const { userId } = request.params;
     const devices = await prisma.device.findMany({
       where: { userId, revokedAt: null },

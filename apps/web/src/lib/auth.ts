@@ -1,18 +1,29 @@
 import type { PublicUser } from '@securechat/types';
+import { deriveAuthValue, ready } from '@securechat/crypto';
 import { api, setAccessToken, silentRefresh } from './api';
 import { createDeviceMaterial, uploadFromSecret } from './cryptoSetup';
 import { clearDeviceRecord, loadDevice, saveDevice, unlockDevice } from './keystore';
 import * as km from './keyManager';
 import * as sessions from './sessions';
+import * as identityPins from './identityPins';
 
 /**
  * High-level auth orchestration: device key generation, the encrypted on-device
- * keystore, the in-memory key manager, and the API. The account password doubles
- * as the keystore passphrase — one secret unlocks both server auth and local keys.
- * The server only ever receives the password (Argon2id-hashed) and PUBLIC keys.
+ * keystore, the in-memory key manager, and the API.
+ *
+ * The password never leaves the device. The server receives only a domain-separated
+ * one-way derivative (`deriveAuthValue`) as the login credential, while the RAW
+ * password is used locally to derive the key-wrapping key. This decoupling means the
+ * server can never re-derive the on-device key-wrapping key from what it sees.
  */
 
 const deviceName = (): string => `Web · ${navigator.platform || 'browser'}`;
+
+/** The credential we actually send to the server — never the raw password. */
+async function authCredential(password: string): Promise<string> {
+  await ready();
+  return deriveAuthValue(password);
+}
 
 export async function register(input: {
   username: string;
@@ -23,7 +34,7 @@ export async function register(input: {
   const result = await api.register({
     username: input.username,
     displayName: input.displayName,
-    password: input.password,
+    password: await authCredential(input.password),
     device: material.upload,
   });
   setAccessToken(result.accessToken);
@@ -49,10 +60,15 @@ export async function login(input: {
     // and restore persisted ratchet sessions.
     const { secret, key } = await unlockDevice(existing, input.password);
     const upload = uploadFromSecret(deviceName(), existing.registrationId, secret);
-    const result = await api.login({ username: input.username, password: input.password, device: upload });
+    const result = await api.login({
+      username: input.username,
+      password: await authCredential(input.password),
+      device: upload,
+    });
     setAccessToken(result.accessToken);
     km.setActive(result.user.id, input.username, result.deviceId, secret, key);
     sessions.loadFromRecord(existing, key);
+    identityPins.loadFromRecord(existing, key);
     return result.user;
   }
 
@@ -60,7 +76,7 @@ export async function login(input: {
   const material = await createDeviceMaterial(deviceName());
   const result = await api.login({
     username: input.username,
-    password: input.password,
+    password: await authCredential(input.password),
     device: material.upload,
   });
   setAccessToken(result.accessToken);
@@ -110,6 +126,7 @@ export async function unlock(username: string, password: string): Promise<boolea
     const me = await api.me();
     km.setActive(me.id, username, record.deviceId, secret, key);
     sessions.loadFromRecord(record, key);
+    identityPins.loadFromRecord(record, key);
     return true;
   } catch {
     return false;

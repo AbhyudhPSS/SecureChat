@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShieldCheck, Lock, Image as ImageIcon, FileText, Mic, BellOff, Ban, Copy, Check } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, Lock, Image as ImageIcon, FileText, Mic, BellOff, Ban, Copy, Check } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import { ChatArea } from './ChatArea';
 import { SettingsModal } from './SettingsModal';
@@ -10,7 +10,7 @@ import { CallOverlay } from './CallOverlay';
 import { Avatar } from './Avatar';
 import { useChat } from '../chatStore';
 import { useSession } from '../store';
-import { getSafetyNumber } from '../lib/messaging';
+import { getSafetyNumber, identityKeyChanged } from '../lib/messaging';
 
 export function ChatLayout() {
   const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
@@ -94,6 +94,7 @@ function InfoPanel({
   const [copied, setCopied] = useState(false);
   const [muted, setMuted] = useState(false);
   const messages = useChat((s) => s.messages[conversationId] ?? []);
+  const keyChanged = identityKeyChanged(userId);
 
   useEffect(() => {
     let alive = true;
@@ -153,6 +154,21 @@ function InfoPanel({
           <MediaStat icon={<FileText className="h-4 w-4" />} count={media.file} label="Files" />
         </div>
       </div>
+
+      {/* Identity-key change warning (TOFU): a pinned peer device's key changed. */}
+      {keyChanged && (
+        <div className="flex items-start gap-2 rounded-2xl border border-rose-500/40 bg-rose-500/10 p-3.5 text-rose-200">
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="text-sm font-semibold">Safety number changed</p>
+            <p className="mt-0.5 text-xs text-rose-200/80">
+              {name}’s identity key is different from the one previously verified on this device.
+              This can happen after a reinstall — but it can also indicate a man-in-the-middle.
+              Re-verify the safety number below with {name} out-of-band before trusting new messages.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Security fingerprint */}
       <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-3.5">

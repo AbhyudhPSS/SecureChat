@@ -30,14 +30,31 @@ model User {
   updatedAt    DateTime @updatedAt
   lastSeenAt   DateTime @default(now())
 
-  devices       Device[]
-  memberships   ConversationMember[]
-  sentMessages  Message[]            @relation("MessageSender")
-  receipts      MessageReceipt[]
-  refreshTokens RefreshToken[]
-  backup        Backup?
+  devices        Device[]
+  memberships    ConversationMember[]
+  sentMessages   Message[]            @relation("MessageSender")
+  receipts       MessageReceipt[]
+  refreshTokens  RefreshToken[]
+  backup         Backup?
+  pendingUploads PendingUpload[]
 
   @@index([username])
+}
+
+/// Records that an object-storage blob key was issued (via presign-upload) to a
+/// specific user. Consumed when the key is claimed as a message attachment or an
+/// avatar — this binds every blob key to its uploader so a client can't attach or
+/// reference a key it wasn't issued (IDOR / avatar-key oracle). Unclaimed rows are
+/// safe to sweep on a TTL.
+model PendingUpload {
+  blobKey   String   @id
+  userId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
 }
 
 /// A single logged-in client (phone, laptop, …). Each device is an independent

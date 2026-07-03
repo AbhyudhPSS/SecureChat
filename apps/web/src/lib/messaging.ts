@@ -11,6 +11,7 @@ import { fromBase64, safetyNumber } from '@securechat/crypto';
 import { api } from './api';
 import * as km from './keyManager';
 import * as sessions from './sessions';
+import * as identityPins from './identityPins';
 import { connectWs, disconnectWs, onServerEvent, sendWs } from './ws';
 import { handleCallSignal } from './calls';
 import { loadMessages, saveMessages } from './messageStore';
@@ -42,6 +43,7 @@ export function teardownMessaging(): void {
   disconnectWs();
   convoTargets.clear();
   peerIdentity.clear();
+  identityPins.clear();
   sessions.clearSessions();
   useChat.getState().reset();
 }
@@ -227,6 +229,12 @@ async function ensureConversationSessions(conversationId: string): Promise<strin
     const bundles = await api.keyBundle(member.user.id);
     for (const d of bundles.devices) {
       if (d.deviceId === myDevice) continue; // never message the sending device
+      // TOFU: pin each device's identity key and flag any later change (MITM signal).
+      if (identityPins.verify(member.user.id, d.deviceId, d.identityPublicKey) === 'changed') {
+        console.warn(
+          `[security] identity key changed for user ${member.user.id} device ${d.deviceId} — possible MITM`,
+        );
+      }
       if (!sessions.hasSession(d.deviceId)) sessions.startSession(d);
       targets.push(d.deviceId);
     }
@@ -258,6 +266,14 @@ export async function getSafetyNumber(peerUserId: string): Promise<string | null
   }
   if (!peerKey) return null;
   return safetyNumber(fromBase64(km.current().secret.dh.publicKey), fromBase64(peerKey));
+}
+
+/**
+ * True if any device of this peer presented an identity key that differs from the
+ * one we pinned on first use — a possible MITM. Drives the warning in the peer panel.
+ */
+export function identityKeyChanged(peerUserId: string): boolean {
+  return identityPins.hasChanged(peerUserId);
 }
 
 export async function sendText(

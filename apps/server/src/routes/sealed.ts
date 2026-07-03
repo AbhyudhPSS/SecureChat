@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { sealedSendSchema, type SealedInboxItem } from '@securechat/types';
 import { prisma } from '../db.js';
+import { isProd } from '../config.js';
 import { authenticate } from '../auth/middleware.js';
 
 function safeEqual(a: string, b: string): boolean {
@@ -19,7 +20,12 @@ export async function sealedRoutes(app: FastifyInstance): Promise<void> {
    * the E2EE channel). The server therefore never learns who sent the message —
    * it only learns which device should receive an opaque blob.
    */
-  app.post('/sealed', async (request, reply) => {
+  app.post(
+    '/sealed',
+    // Unauthenticated (authorized only by the recipient's delivery token), so it
+    // needs its own IP rate limit to prevent anonymous inbox flooding / storage abuse.
+    { config: { rateLimit: { max: isProd ? 60 : 100_000, timeWindow: '1 minute' } } },
+    async (request, reply) => {
     const parse = sealedSendSchema.safeParse(request.body);
     if (!parse.success) return reply.code(400).send({ error: 'invalid_input' });
     const { recipientDeviceId, deliveryToken, sealed } = parse.data;

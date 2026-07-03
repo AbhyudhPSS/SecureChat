@@ -50,6 +50,16 @@ export async function uploadAvatar(file: File): Promise<string> {
   return blobKey;
 }
 
+// Only these (non-active) content types are allowed to become a Blob's type for a
+// preview object URL. `att.mime` is chosen by the *sending* peer, so a malicious
+// sender could set it to text/html or image/svg+xml — types that can execute script
+// if the blob URL is ever opened top-level. Anything not in this allowlist falls back
+// to application/octet-stream, which is inert and forces a download.
+const SAFE_INLINE_MIME = /^(image\/(png|jpe?g|gif|webp|avif|bmp)|audio\/[\w.+-]+|video\/[\w.+-]+)$/i;
+function safeBlobType(mime: string): string {
+  return SAFE_INLINE_MIME.test(mime) ? mime : 'application/octet-stream';
+}
+
 // Cache decrypted blobs as object URLs (keyed by blob key) for the session.
 const objectUrlCache = new Map<string, string>();
 
@@ -64,7 +74,7 @@ export async function fetchAttachmentUrl(att: AttachmentMeta): Promise<string> {
   const ciphertext = new Uint8Array(await res.arrayBuffer());
   const plaintext = decryptFile(fromBase64(att.key), ciphertext);
   // Copy into a fresh ArrayBuffer so Blob gets a clean, correctly-sized buffer.
-  const url = URL.createObjectURL(new Blob([plaintext.slice()], { type: att.mime }));
+  const url = URL.createObjectURL(new Blob([plaintext.slice()], { type: safeBlobType(att.mime) }));
   objectUrlCache.set(att.blobKey, url);
   return url;
 }

@@ -21,7 +21,10 @@ import { randomUUID } from 'node:crypto';
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
     logger: isProd
-      ? true
+      ? {
+          // Never serialize credentials into logs.
+          redact: ['req.headers.cookie', 'req.headers.authorization', 'req.body.password'],
+        }
       : { transport: { target: 'pino-pretty', options: { translateTime: 'HH:MM:ss' } } },
     // Trust the reverse proxy in production for correct client IPs / rate limiting.
     trustProxy: isProd,
@@ -67,6 +70,19 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(deviceRoutes);
   await app.register(sealedRoutes);
   await app.register(backupRoutes);
+
+  // Central error handler: log full detail server-side, but never leak stack
+  // traces, DB error text, or internal messages to clients. Client-caused 4xx
+  // keep their status; everything else collapses to a generic 500.
+  app.setErrorHandler((err, req, reply) => {
+    const status = err.statusCode ?? 500;
+    if (status >= 500) {
+      req.log.error({ err, reqId: req.id }, 'unhandled_error');
+      return reply.code(500).send({ error: 'internal_error' });
+    }
+    // 4xx (validation, rate-limit, body-limit) — send a safe code, no internals.
+    return reply.code(status).send({ error: err.code ?? 'request_error' });
+  });
 
   // Prometheus scrape endpoint (no auth; expose only on the internal network in prod).
   app.get('/metrics', async (_req, reply) => {

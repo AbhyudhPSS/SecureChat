@@ -24,6 +24,19 @@ async function requireAdmin(conversationId: string, userId: string): Promise<boo
   return m?.role === 'OWNER' || m?.role === 'ADMIN';
 }
 
+/**
+ * Member add / role changes are GROUP-only. Without this a member could inject a
+ * third participant into a DIRECT (1:1) conversation, silently turning a private
+ * DM into a multi-party room whose new member becomes a valid ciphertext recipient.
+ */
+async function isGroup(conversationId: string): Promise<boolean> {
+  const c = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: { type: true },
+  });
+  return c?.type === 'GROUP';
+}
+
 function toPublicUser(u: {
   id: string;
   username: string;
@@ -128,6 +141,7 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params;
     const parse = addMembersSchema.safeParse(request.body);
     if (!parse.success) return reply.code(400).send({ error: 'invalid_input' });
+    if (!(await isGroup(id))) return reply.code(400).send({ error: 'not_a_group' });
     if (!(await requireAdmin(id, me))) return reply.code(403).send({ error: 'forbidden' });
 
     await prisma.conversationMember.createMany({
@@ -160,6 +174,7 @@ export async function conversationRoutes(app: FastifyInstance): Promise<void> {
       const { id, userId } = request.params;
       const parse = setRoleSchema.safeParse(request.body);
       if (!parse.success) return reply.code(400).send({ error: 'invalid_input' });
+      if (!(await isGroup(id))) return reply.code(400).send({ error: 'not_a_group' });
       if (!(await requireAdmin(id, me))) return reply.code(403).send({ error: 'forbidden' });
       try {
         await prisma.conversationMember.update({

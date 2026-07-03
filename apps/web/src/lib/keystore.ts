@@ -29,6 +29,7 @@ export interface DeviceRecord {
   salt: string; // base64 — derives the wrapping key
   identityBlob: string; // AEAD(JSON(KeystoreSecret))
   sessionsBlob?: string; // AEAD(JSON(serialized ratchet sessions))
+  pinsBlob?: string; // AEAD(JSON(pinned peer identity keys — TOFU))
 }
 
 interface SecureChatDB extends DBSchema {
@@ -105,6 +106,21 @@ export async function saveSessions(
 export function loadSessions(record: DeviceRecord, key: Uint8Array): string | null {
   if (!record.sessionsBlob) return null;
   return bytesToUtf8(aeadDecrypt(key, fromBase64(record.sessionsBlob)));
+}
+
+/** Persist the pinned peer identity keys (wrapped) onto the device record. */
+export async function savePins(username: string, key: Uint8Array, pinsJson: string): Promise<void> {
+  await ready();
+  const rec = await loadDevice(username);
+  if (!rec) return;
+  rec.pinsBlob = toBase64(aeadEncrypt(key, utf8ToBytes(pinsJson)));
+  await (await db()).put('devices', rec);
+}
+
+/** Decrypt the stored identity-pins blob, or null if none. */
+export function loadPins(record: DeviceRecord, key: Uint8Array): string | null {
+  if (!record.pinsBlob) return null;
+  return bytesToUtf8(aeadDecrypt(key, fromBase64(record.pinsBlob)));
 }
 
 export async function clearDeviceRecord(username: string): Promise<void> {

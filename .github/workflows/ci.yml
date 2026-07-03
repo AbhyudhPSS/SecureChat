@@ -44,13 +44,9 @@ jobs:
       redis:
         image: redis:7-alpine
         ports: ['6379:6379']
-      minio:
-        image: bitnami/minio:latest
-        env:
-          MINIO_ROOT_USER: minioadmin
-          MINIO_ROOT_PASSWORD: minioadmin
-          MINIO_DEFAULT_BUCKETS: securechat-attachments
-        ports: ['9000:9000']
+      # NOTE: MinIO is NOT a service container — GitHub service containers can't pass
+      # the `server /data` command the official image needs, and `bitnami/minio` was
+      # removed from Docker Hub. It's started as an explicit step below instead.
     env:
       DATABASE_URL: postgresql://securechat:securechat_ci@localhost:5432/securechat?schema=public
       REDIS_URL: redis://localhost:6379
@@ -74,6 +70,18 @@ jobs:
       - run: pnpm --filter @securechat/crypto --filter @securechat/types build
       - run: pnpm --filter @securechat/server exec prisma migrate deploy
       - run: pnpm --filter @securechat/server exec prisma generate
+      - name: Start MinIO + create bucket
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio server /data
+          # Wait for readiness, then create the bucket the app expects.
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:9000/minio/health/ready && break
+            sleep 1
+          done
+          docker run --rm --network host --entrypoint /bin/sh minio/mc -c \
+            "mc alias set ci http://localhost:9000 minioadmin minioadmin && mc mb --ignore-existing ci/securechat-attachments"
       - name: Boot server
         run: |
           pnpm --filter @securechat/server dev > server.log 2>&1 &

@@ -66,11 +66,28 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     if (!parse.success) {
       return reply.code(400).send({ error: 'invalid_input', details: parse.error.flatten() });
     }
+    const me = request.auth!.userId;
+    const newAvatar = parse.data.avatarUrl;
+    // A new avatar key must be one THIS user was issued — otherwise the avatar
+    // endpoint would presign a GET for an arbitrary object key (avatar-key oracle).
+    if (newAvatar) {
+      const current = await prisma.user.findUnique({
+        where: { id: me },
+        select: { avatarUrl: true },
+      });
+      if (newAvatar !== current?.avatarUrl) {
+        const issued = await prisma.pendingUpload.findUnique({ where: { blobKey: newAvatar } });
+        if (!issued || issued.userId !== me) {
+          return reply.code(400).send({ error: 'unknown_avatar' });
+        }
+      }
+    }
     try {
       const user = await prisma.user.update({
-        where: { id: request.auth!.userId },
+        where: { id: me },
         data: { ...parse.data, username: parse.data.username?.toLowerCase() },
       });
+      if (newAvatar) await prisma.pendingUpload.deleteMany({ where: { blobKey: newAvatar } });
       return reply.send(toMe(user));
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {

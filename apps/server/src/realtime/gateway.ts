@@ -3,6 +3,7 @@ import websocket from '@fastify/websocket';
 import type { WebSocket } from 'ws';
 import { wsClientEventSchema, type WsServerEvent } from '@securechat/types';
 import { verifyAccessToken } from '../auth/tokens.js';
+import { config } from '../config.js';
 import { prisma } from '../db.js';
 import {
   PRESENCE_CHANNEL,
@@ -20,6 +21,23 @@ interface Conn {
   userId: string;
   deviceId: string;
   socket: WebSocket;
+  // Token bucket for per-connection frame rate limiting (see `allowFrame`).
+  bucket: { tokens: number; last: number };
+}
+
+// Each inbound frame costs one token; ~20/s sustained, bursts up to 40. Generous
+// for typing/read/ping/call yet caps the DB+fan-out amplification a single socket
+// can drive. (HTTP rate limiting doesn't cover WS frames.)
+const FRAME_BUCKET_CAP = 40;
+const FRAME_REFILL_PER_SEC = 20;
+function allowFrame(conn: Conn): boolean {
+  const now = Date.now();
+  const b = conn.bucket;
+  b.tokens = Math.min(FRAME_BUCKET_CAP, b.tokens + ((now - b.last) / 1000) * FRAME_REFILL_PER_SEC);
+  b.last = now;
+  if (b.tokens < 1) return false;
+  b.tokens -= 1;
+  return true;
 }
 
 // Connections on THIS instance, grouped by user. Cross-instance reach is via Redis.
@@ -132,6 +150,8 @@ async function deliverToUser(userId: string, payload: Fanout): Promise<void> {
 
 /** Handle an event the client sent us over its socket. */
 async function handleClientEvent(conn: Conn, raw: string): Promise<void> {
+  // Drop frames from a socket that's exceeding its rate budget.
+  if (!allowFrame(conn)) return;
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -150,6 +170,10 @@ async function handleClientEvent(conn: Conn, raw: string): Promise<void> {
   }
 
   if (event.type === 'typing') {
+    // Authorization: only members may emit into a conversation. Without this an
+    // authenticated user could inject typing indicators into (and enumerate the
+    // membership of) any conversation by guessing ids.
+    if (!(await isMember(event.conversationId, conn.userId))) return;
     const peers = await otherMemberUserIds(event.conversationId, conn.userId);
     await Promise.all(
       peers.map((uid) =>
@@ -165,6 +189,15 @@ async function handleClientEvent(conn: Conn, raw: string): Promise<void> {
   }
 
   if (event.type === 'read') {
+    // Authorization: caller must belong to the conversation, and the message must
+    // actually live in it — otherwise a client could forge read receipts and write
+    // receipt rows for messages in conversations it can't see.
+    if (!(await isMember(event.conversationId, conn.userId))) return;
+    const msg = await prisma.message.findUnique({
+      where: { id: event.messageId },
+      select: { conversationId: true },
+    });
+    if (!msg || msg.conversationId !== event.conversationId) return;
     // Record READ receipt + advance the read pointer, then notify other members.
     await prisma.$transaction([
       prisma.messageReceipt.upsert({
@@ -199,7 +232,11 @@ async function handleClientEvent(conn: Conn, raw: string): Promise<void> {
   }
 
   if (event.type === 'call') {
-    // Relay WebRTC signaling to the target user (must share this conversation).
+    // Relay WebRTC signaling only when BOTH the caller and the target share this
+    // conversation. Previously only the target was checked, letting an attacker
+    // inject call/offer/ICE signaling and spoof caller-ID into conversations they
+    // don't belong to.
+    if (!(await isMember(event.conversationId, conn.userId))) return;
     if (!(await isMember(event.conversationId, event.toUserId))) return;
     await publishToUser(event.toUserId, {
       kind: 'call',
@@ -214,7 +251,10 @@ let subscriberWired = false;
 let heartbeat: ReturnType<typeof setInterval> | undefined;
 
 export async function registerRealtime(app: FastifyInstance): Promise<void> {
-  await app.register(websocket);
+  // Cap inbound frame size (the HTTP bodyLimit does NOT apply to WS frames). 64 KiB
+  // comfortably fits signaling/typing/read events and blocks memory-exhaustion via
+  // giant frames that would be JSON.parsed before validation.
+  await app.register(websocket, { options: { maxPayload: 64 * 1024 } });
 
   // Keep the online-TTL of every locally-connected user fresh, independent of
   // whether the client happens to send frames (a passive socket is still online).
@@ -251,6 +291,15 @@ export async function registerRealtime(app: FastifyInstance): Promise<void> {
   }
 
   app.get('/ws', { websocket: true }, async (socket, request) => {
+    // Reject cross-origin handshakes (defends against cross-site WebSocket
+    // hijacking). Browsers always send Origin; non-browser clients without it
+    // are allowed through to the token check below.
+    const origin = request.headers.origin;
+    if (origin && origin !== config.WEB_ORIGIN) {
+      socket.close(1008, 'forbidden_origin');
+      return;
+    }
+
     // Authenticate via ?token= (browsers can't set WS Authorization headers).
     const token = (request.query as { token?: string })?.token;
     let userId: string;
@@ -264,7 +313,12 @@ export async function registerRealtime(app: FastifyInstance): Promise<void> {
       return;
     }
 
-    const conn: Conn = { userId, deviceId, socket };
+    const conn: Conn = {
+      userId,
+      deviceId,
+      socket,
+      bucket: { tokens: FRAME_BUCKET_CAP, last: Date.now() },
+    };
     addLocal(conn);
     await markOnline(userId);
     await publishPresence(userId, true, new Date().toISOString());

@@ -13,8 +13,11 @@ export async function attachmentRoutes(app: FastifyInstance): Promise<void> {
    * Hand back an opaque blob key + a short-lived presigned PUT URL. The client
    * encrypts the file locally, then uploads the ciphertext directly to storage.
    */
-  app.post('/attachments/presign-upload', async (_request, reply) => {
+  app.post('/attachments/presign-upload', async (request, reply) => {
     const blobKey = newBlobKey();
+    // Record that THIS user was issued this key, so it can't later be claimed by
+    // another user as an attachment/avatar (IDOR). Consumed on claim; TTL-swept if not.
+    await prisma.pendingUpload.create({ data: { blobKey, userId: request.auth!.userId } });
     const uploadUrl = await presignUpload(blobKey);
     const result: PresignUploadResult = { blobKey, uploadUrl };
     return reply.send(result);

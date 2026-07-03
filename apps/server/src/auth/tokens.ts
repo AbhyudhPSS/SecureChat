@@ -15,16 +15,25 @@ export interface AccessClaims {
   did: string; // deviceId
 }
 
+const JWT_ISSUER = 'securechat';
+const JWT_AUDIENCE = 'securechat-api';
+
 export function signAccessToken(userId: string, deviceId: string): string {
   return jwt.sign({ did: deviceId } satisfies Omit<AccessClaims, 'sub'>, config.JWT_ACCESS_SECRET, {
     subject: userId,
     expiresIn: config.JWT_ACCESS_TTL,
     algorithm: 'HS256',
+    issuer: JWT_ISSUER,
+    audience: JWT_AUDIENCE,
   });
 }
 
 export function verifyAccessToken(token: string): AccessClaims {
-  const decoded = jwt.verify(token, config.JWT_ACCESS_SECRET, { algorithms: ['HS256'] });
+  const decoded = jwt.verify(token, config.JWT_ACCESS_SECRET, {
+    algorithms: ['HS256'],
+    issuer: JWT_ISSUER,
+    audience: JWT_AUDIENCE,
+  });
   if (typeof decoded === 'string' || !decoded.sub || typeof decoded.did !== 'string') {
     throw new Error('malformed access token');
   }

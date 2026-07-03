@@ -31,6 +31,3 @@ pnpm-debug.log*
 
 # Docker volumes (local)
 infra/data/
-
-# local preview tooling (renamed to .tooling/)
-.claude/

@@ -41,9 +41,12 @@ function toPublicUser(u: {
 }
 
 // Tight rate limits on credential endpoints to slow stuffing/brute-force.
-// Strict only in production; generous in dev/test so suites aren't throttled.
+// Relaxed ONLY under the automated test runner; dev and prod are both protected
+// (a dev instance can be exposed, and normal use never hits these low ceilings).
 const strictLimit = (max: number) => ({
-  config: { rateLimit: { max: isProd ? max : 100_000, timeWindow: '1 minute' } },
+  config: {
+    rateLimit: { max: config.NODE_ENV === 'test' ? 100_000 : max, timeWindow: '1 minute' },
+  },
 });
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
@@ -71,6 +74,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
       const { accessToken, refresh } = await issueSession(user.id, deviceId);
       setRefreshCookie(reply, refresh.token);
+      request.log.info({ event: 'auth.register', userId: user.id, deviceId }, 'account created');
       const result: AuthResult = { user: toPublicUser(user), deviceId, accessToken };
       return reply.code(201).send(result);
     } catch (err) {
@@ -100,12 +104,14 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const ok = await verify(user?.passwordHash ?? dummyHash, password).catch(() => false);
 
     if (!user || !ok) {
+      request.log.warn({ event: 'auth.login_failed', ip: request.ip }, 'invalid credentials');
       return reply.code(401).send({ error: 'invalid_credentials' });
     }
 
     const deviceId = await prisma.$transaction((tx) => upsertDevice(tx, user.id, device));
     const { accessToken, refresh } = await issueSession(user.id, deviceId);
     setRefreshCookie(reply, refresh.token);
+    request.log.info({ event: 'auth.login', userId: user.id, deviceId }, 'login ok');
     const result: AuthResult = { user: toPublicUser(user), deviceId, accessToken };
     return reply.send(result);
   });
@@ -131,6 +137,12 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       return reply.send(result);
     } catch (err) {
       if (err instanceof RefreshError) {
+        // Reuse of a rotated token → likely stolen; the whole family was burned.
+        // This is a real attack signal, so log it at WARN for monitoring/alerting.
+        request.log.warn(
+          { event: 'auth.refresh_rejected', reason: err.message, ip: request.ip },
+          'refresh token rejected (possible theft)',
+        );
         clearRefreshCookie(reply);
         return reply.code(401).send({ error: 'refresh_rejected' });
       }
