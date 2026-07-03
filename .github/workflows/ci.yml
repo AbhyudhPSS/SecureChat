@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    name: Lint · Typecheck · Unit · Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Shared packages must be built before typecheck/lint resolve their types.
+      - run: pnpm --filter @securechat/crypto --filter @securechat/types build
+      - run: pnpm --filter @securechat/server exec prisma generate
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+  e2e:
+    name: End-to-end (real crypto over the API + WebSocket)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: securechat
+          POSTGRES_PASSWORD: securechat_ci
+          POSTGRES_DB: securechat
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U securechat"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+      minio:
+        image: bitnami/minio:latest
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+          MINIO_DEFAULT_BUCKETS: securechat-attachments
+        ports: ['9000:9000']
+    env:
+      DATABASE_URL: postgresql://securechat:securechat_ci@localhost:5432/securechat?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: ci-access-secret-which-is-long-enough
+      JWT_REFRESH_SECRET: ci-refresh-secret-which-is-long-enough
+      S3_ENDPOINT: http://localhost:9000
+      S3_BUCKET: securechat-attachments
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      WEB_ORIGIN: http://localhost:5173
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @securechat/crypto --filter @securechat/types build
+      - run: pnpm --filter @securechat/server exec prisma migrate deploy
+      - run: pnpm --filter @securechat/server exec prisma generate
+      - name: Boot server
+        run: |
+          pnpm --filter @securechat/server dev > server.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://localhost:4000/health && break; sleep 1; done
+      - name: Run E2E suites
+        run: pnpm test:e2e
+      - name: Server logs on failure
+        if: failure()
+        run: cat server.log

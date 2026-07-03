@@ -1,0 +1,262 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * ── Themes ──────────────────────────────────────────────────────────────────────
+ * Each theme defines its accent ramp (RGB triplets consumed by Tailwind's
+ * brand/violet/accent colors), a dark glass-panel tint (`--panel`), a background
+ * base color, the full-bleed background image, and a gradient fallback used when
+ * the image asset isn't present. Drop the matching photos in `public/themes/`:
+ *   emerald.jpg · glacier.jpg · carnival.jpg · onyx.jpg · crimson.jpg
+ */
+@layer base {
+  :root,
+  [data-theme='glacier'] {
+    --brand-300: 147 197 253;
+    --brand-400: 96 165 250;
+    --brand-500: 59 130 246;
+    --brand-600: 37 99 235;
+    --violet-400: 129 140 248;
+    --violet-500: 99 102 241;
+    --violet-600: 79 70 229;
+    --accent-400: 34 211 238;
+    --accent-500: 6 182 212;
+    --panel: 9 14 24;
+    --bg-base: #060a12;
+    --bg-image: url('/themes/glacier.jpg');
+    --bg-fallback: radial-gradient(60rem 50rem at 15% 8%, rgba(96, 165, 250, 0.25), transparent 60%),
+      radial-gradient(52rem 50rem at 92% 82%, rgba(99, 102, 241, 0.22), transparent 60%),
+      linear-gradient(135deg, #0a1428 0%, #060a12 100%);
+  }
+
+  [data-theme='emerald'] {
+    --brand-300: 110 231 183;
+    --brand-400: 52 211 153;
+    --brand-500: 16 185 129;
+    --brand-600: 5 150 105;
+    --violet-400: 253 224 71;
+    --violet-500: 234 179 8;
+    --violet-600: 202 138 4;
+    --accent-400: 163 230 53;
+    --accent-500: 132 204 22;
+    --panel: 7 18 13;
+    --bg-base: #06120d;
+    --bg-image: url('/themes/emerald.jpg');
+    --bg-fallback: radial-gradient(60rem 50rem at 20% 12%, rgba(16, 185, 129, 0.28), transparent 60%),
+      radial-gradient(50rem 50rem at 85% 86%, rgba(234, 179, 8, 0.16), transparent 60%),
+      linear-gradient(135deg, #08160f 0%, #05100b 100%);
+  }
+
+  [data-theme='carnival'] {
+    --brand-300: 253 186 116;
+    --brand-400: 251 146 60;
+    --brand-500: 249 115 22;
+    --brand-600: 234 88 12;
+    --violet-400: 248 113 113;
+    --violet-500: 239 68 68;
+    --violet-600: 220 38 38;
+    --accent-400: 250 204 21;
+    --accent-500: 234 179 8;
+    --panel: 12 16 28;
+    --bg-base: #0b1020;
+    --bg-image: url('/themes/carnival.jpg');
+    --bg-fallback: radial-gradient(48rem 48rem at 18% 12%, rgba(249, 115, 22, 0.3), transparent 58%),
+      radial-gradient(46rem 46rem at 88% 28%, rgba(239, 68, 68, 0.26), transparent 58%),
+      radial-gradient(50rem 50rem at 60% 105%, rgba(250, 204, 21, 0.18), transparent 60%),
+      linear-gradient(135deg, #0b1020 0%, #080a16 100%);
+  }
+
+  /* "Onyx" slot now carries a violet topographic photo → amethyst accent palette. */
+  [data-theme='onyx'] {
+    --brand-300: 216 180 254;
+    --brand-400: 192 132 252;
+    --brand-500: 168 85 247;
+    --brand-600: 147 51 234;
+    --violet-400: 129 140 248;
+    --violet-500: 99 102 241;
+    --violet-600: 79 70 229;
+    --accent-400: 232 121 249;
+    --accent-500: 217 70 239;
+    --panel: 11 13 26;
+    --bg-base: #0a0c16;
+    --bg-image: url('/themes/onyx.jpg');
+    --bg-fallback: radial-gradient(58rem 52rem at 22% 14%, rgba(168, 85, 247, 0.26), transparent 60%),
+      radial-gradient(50rem 50rem at 86% 84%, rgba(99, 102, 241, 0.2), transparent 60%),
+      linear-gradient(135deg, #0d0f1e 0%, #08090f 100%);
+  }
+
+  [data-theme='crimson'] {
+    --brand-300: 252 165 165;
+    --brand-400: 248 113 113;
+    --brand-500: 239 68 68;
+    --brand-600: 220 38 38;
+    --violet-400: 251 146 60;
+    --violet-500: 249 115 22;
+    --violet-600: 234 88 12;
+    --accent-400: 251 191 36;
+    --accent-500: 245 158 11;
+    --panel: 16 8 10;
+    --bg-base: #120608;
+    --bg-image: url('/themes/crimson.jpg');
+    --bg-fallback: radial-gradient(55rem 50rem at 20% 14%, rgba(239, 68, 68, 0.28), transparent 58%),
+      radial-gradient(50rem 50rem at 86% 82%, rgba(249, 115, 22, 0.22), transparent 60%),
+      linear-gradient(135deg, #160809 0%, #0f0608 100%);
+  }
+
+  /* Spider — red line-art on near-black → crimson accent palette. */
+  [data-theme='spider'] {
+    --brand-300: 252 165 165;
+    --brand-400: 248 113 113;
+    --brand-500: 239 68 68;
+    --brand-600: 220 38 38;
+    --violet-400: 244 63 94;
+    --violet-500: 225 29 72;
+    --violet-600: 190 18 60;
+    --accent-400: 251 113 133;
+    --accent-500: 244 63 94;
+    --panel: 12 8 10;
+    --bg-base: #060406;
+    --bg-image: url('/themes/spider.png');
+    --bg-fallback: radial-gradient(50rem 46rem at 50% 32%, rgba(239, 68, 68, 0.22), transparent 60%),
+      linear-gradient(135deg, #0a0608 0%, #050304 100%);
+  }
+
+  /* Bumblebee — soft pink field with navy/amber bees → pink + honey accents. */
+  [data-theme='bumblebee'] {
+    --brand-300: 249 168 212;
+    --brand-400: 244 114 182;
+    --brand-500: 236 72 153;
+    --brand-600: 219 39 119;
+    --violet-400: 251 191 36;
+    --violet-500: 245 158 11;
+    --violet-600: 217 119 6;
+    --accent-400: 253 224 71;
+    --accent-500: 250 204 21;
+    --panel: 20 18 40;
+    --bg-base: #f4a7c0;
+    --bg-image: url('/themes/bumblebee.png');
+    --bg-fallback: radial-gradient(52rem 48rem at 20% 12%, rgba(236, 72, 153, 0.28), transparent 60%),
+      radial-gradient(48rem 48rem at 85% 85%, rgba(245, 158, 11, 0.2), transparent 60%),
+      linear-gradient(135deg, #f7b3c9 0%, #ef92b4 100%);
+  }
+
+  /* Sunset — purple/red minimalist peaks → rose + violet accents. */
+  [data-theme='sunset'] {
+    --brand-300: 253 164 175;
+    --brand-400: 251 113 133;
+    --brand-500: 244 63 94;
+    --brand-600: 225 29 72;
+    --violet-400: 192 132 252;
+    --violet-500: 168 85 247;
+    --violet-600: 147 51 234;
+    --accent-400: 251 146 60;
+    --accent-500: 249 115 22;
+    --panel: 16 10 22;
+    --bg-base: #140a1c;
+    --bg-image: url('/themes/sunset.jpg');
+    --bg-fallback: radial-gradient(55rem 50rem at 50% 92%, rgba(244, 63, 94, 0.3), transparent 55%),
+      radial-gradient(50rem 50rem at 20% 20%, rgba(168, 85, 247, 0.22), transparent 60%),
+      linear-gradient(135deg, #1a0e24 0%, #0e0714 100%);
+  }
+
+  :root {
+    color-scheme: dark;
+    /* Glass panel tint + frost (overridden live by the Appearance opacity slider). */
+    --glass: 0.4;
+    --glass-blur: 16px;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply text-slate-100 antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+    background-color: var(--bg-base);
+    /* Darkening scrim (theme-tinted) over the photo, with a CSS fallback beneath it
+       so the app still looks themed before the image asset is added. */
+    background-image:
+      linear-gradient(180deg, rgb(var(--panel) / 0.42) 0%, rgb(var(--panel) / 0.58) 100%),
+      var(--bg-image),
+      var(--bg-fallback);
+    background-size: cover, cover, cover;
+    background-position: center, center, center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    transition: background-color 0.4s ease;
+  }
+
+  ::selection {
+    background: rgb(var(--brand-500) / 0.35);
+  }
+
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.02em;
+  }
+}
+
+@layer components {
+  /* Core glass surface — dark, theme-tinted translucency so panels stay legible over
+     any background photo while the gutters reveal the theme. */
+  .glass {
+    @apply border border-white/10 shadow-glass;
+    background-color: rgb(var(--panel) / var(--glass));
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+  }
+  .glass-card {
+    @apply rounded-2xl border border-white/[0.08] shadow-glass-sm;
+    background-color: rgb(var(--panel) / calc(var(--glass) + 0.06));
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+  }
+  .glass-strong {
+    @apply border border-white/10 shadow-glass;
+    background-color: rgb(var(--panel) / calc(var(--glass) + 0.32));
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+  }
+  /* Glass form control with a soft glowing (themed) focus. */
+  .glass-input {
+    @apply rounded-xl border border-white/10 bg-white/[0.04] text-sm text-slate-100 outline-none transition
+      placeholder:text-slate-500 focus:border-brand-400/60 focus:bg-white/[0.06]
+      focus:ring-2 focus:ring-brand-500/25;
+  }
+  /* Subtle hairline divider that reads on glass. */
+  .hairline {
+    @apply border-white/[0.07];
+  }
+}
+
+@layer utilities {
+  /* Thin, theme-aware scrollbars for scroll panes. */
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+  }
+  .scroll-thin::-webkit-scrollbar {
+    width: 7px;
+    height: 7px;
+  }
+  .scroll-thin::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-white/10;
+  }
+  .scroll-thin::-webkit-scrollbar-thumb:hover {
+    @apply bg-white/20;
+  }
+  /* Gradient text for brand accents. */
+  .text-gradient {
+    @apply bg-gradient-to-r from-brand-300 via-violet-400 to-accent-400 bg-clip-text text-transparent;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}

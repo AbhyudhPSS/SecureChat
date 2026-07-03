@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm -v)",
+      "Bash(command -v node)",
+      "Bash(echo \"node: $\\(command -v node || echo MISSING\\)\")",
+      "Bash(command -v npm)",
+      "Bash(echo \"npm: $\\(command -v npm || echo MISSING\\)\")",
+      "Bash(command -v pnpm)"
+    ]
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "name": "securechat",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SecureChat — end-to-end encrypted messaging platform",
+  "license": "UNLICENSED",
+  "author": "Abhyudh Solanki <abhyudhsolanki@gmail.com>",
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "dev:all": "bash scripts/dev-all.sh",
+    "lint": "eslint \"apps/*/src/**/*.{ts,tsx}\" \"packages/*/src/**/*.ts\"",
+    "test": "turbo run test",
+    "test:e2e": "pnpm --filter @securechat/server test:e2e",
+    "typecheck": "turbo run typecheck",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "infra:up": "docker compose -f infra/docker-compose.yml up -d",
+    "infra:down": "docker compose -f infra/docker-compose.yml down",
+    "db:migrate": "pnpm --filter @securechat/server prisma migrate dev",
+    "db:generate": "pnpm --filter @securechat/server prisma generate"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.10.0",
+    "@types/node": "^20.14.0",
+    "eslint": "^9.10.0",
+    "prettier": "^3.3.3",
+    "turbo": "^2.1.0",
+    "typescript": "5.6.3",
+    "typescript-eslint": "^8.5.0"
+  },
+  "pnpm": {
+    "patchedDependencies": {
+      "libsodium-wrappers-sumo@0.7.16": "patches/libsodium-wrappers-sumo@0.7.16.patch"
+    }
+  }
+}

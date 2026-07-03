@@ -1,0 +1,35 @@
+{
+  "name": "@securechat/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@securechat/crypto": "workspace:*",
+    "@securechat/types": "workspace:*",
+    "@tanstack/react-query": "^5.55.4",
+    "clsx": "^2.1.1",
+    "framer-motion": "^11.5.4",
+    "idb": "^8.0.0",
+    "lucide-react": "^0.439.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.45",
+    "tailwindcss": "^3.4.10",
+    "typescript": "5.6.3",
+    "vite": "^5.4.3"
+  }
+}

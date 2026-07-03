@@ -1,0 +1,267 @@
+// SecureChat data model.
+//
+// PRIVACY INVARIANT: every column that could hold message content holds ONLY
+// ciphertext produced on the client (see packages/crypto). The server stores and
+// routes opaque blobs; it never holds plaintext or message keys. Identifiers
+// required for routing (user/device/conversation ids) are unavoidable metadata —
+// see docs/SECURITY.md for the metadata threat model and the sealed-sender path.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Identity & accounts
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique // discoverable for search; everything else is E2EE
+  displayName  String
+  avatarUrl    String? // optional, may point to an encrypted blob
+  bio          String?
+  passwordHash String // Argon2id — never plaintext
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  lastSeenAt   DateTime @default(now())
+
+  devices       Device[]
+  memberships   ConversationMember[]
+  sentMessages  Message[]            @relation("MessageSender")
+  receipts      MessageReceipt[]
+  refreshTokens RefreshToken[]
+  backup        Backup?
+
+  @@index([username])
+}
+
+/// A single logged-in client (phone, laptop, …). Each device is an independent
+/// E2EE endpoint with its own key material and ratchet sessions.
+model Device {
+  id                  String   @id @default(cuid())
+  userId              String
+  name                String // user-facing label, e.g. "Vikas's iPhone"
+  registrationId      Int // libsignal-style per-device registration id
+  signingPublicKey    String // Ed25519 identity (base64)
+  identityPublicKey   String // X25519 identity for DH (base64)
+  createdAt           DateTime @default(now())
+  lastSeenAt          DateTime @default(now())
+  revokedAt           DateTime? // soft-revoke: revoked devices get no new prekey bundles
+  deliveryToken       String   @unique // opaque token contacts present to deliver SEALED messages anonymously
+
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  signedPreKeys    SignedPreKey[]
+  oneTimePreKeys   OneTimePreKey[]
+  inboundEnvelopes MessageEnvelope[] @relation("EnvelopeRecipientDevice")
+  sealedMessages   SealedMessage[]
+  sentMessages     Message[]         @relation("MessageSenderDevice")
+  refreshTokens    RefreshToken[]
+
+  @@unique([userId, registrationId])
+  @@index([userId])
+}
+
+/// Medium-term prekey, rotated periodically, signed by the device identity key.
+model SignedPreKey {
+  id        String   @id @default(cuid())
+  deviceId  String
+  keyId     Int
+  publicKey String // X25519 public (base64)
+  signature String // Ed25519 signature over publicKey (base64)
+  createdAt DateTime @default(now())
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, keyId])
+  @@index([deviceId])
+}
+
+/// One-time prekey — consumed (deleted) the first time a peer opens a session.
+model OneTimePreKey {
+  id        String   @id @default(cuid())
+  deviceId  String
+  keyId     Int
+  publicKey String // X25519 public (base64)
+  createdAt DateTime @default(now())
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, keyId])
+  @@index([deviceId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Conversations & messages
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ConversationType {
+  DIRECT
+  GROUP
+}
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+model Conversation {
+  id        String           @id @default(cuid())
+  type      ConversationType @default(DIRECT)
+  title     String? // group name (groups only); DIRECT conversations derive the name from the peer
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  members  ConversationMember[]
+  messages Message[]
+
+  @@index([updatedAt])
+}
+
+model ConversationMember {
+  id                String     @id @default(cuid())
+  conversationId    String
+  userId            String
+  role              MemberRole @default(MEMBER)
+  joinedAt          DateTime   @default(now())
+  lastReadMessageId String? // drives unread counts & read receipts
+  muted             Boolean    @default(false)
+  archived          Boolean    @default(false)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+}
+
+/// A logical message. Its plaintext exists ONLY on client devices. The server
+/// stores one MessageEnvelope per recipient device (sender-fanout encryption).
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  senderUserId   String
+  senderDeviceId String
+  createdAt      DateTime @default(now())
+  editedAt       DateTime?
+  deletedAt      DateTime? // soft delete / "delete for everyone"
+
+  conversation Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User              @relation("MessageSender", fields: [senderUserId], references: [id])
+  senderDevice Device            @relation("MessageSenderDevice", fields: [senderDeviceId], references: [id])
+  envelopes    MessageEnvelope[]
+  receipts     MessageReceipt[]
+  attachments  Attachment[]
+
+  @@index([conversationId, createdAt])
+  @@index([senderUserId])
+}
+
+/// Per-recipient-device ciphertext. `header` is the Double Ratchet message header
+/// (JSON), `ciphertext` is nonce||ct||tag (base64). The server reads neither.
+model MessageEnvelope {
+  id                String    @id @default(cuid())
+  messageId         String
+  recipientDeviceId String
+  header            Json // Double Ratchet header { dh, pn, n }
+  x3dh              Json? // X3DH initial message, present only on a session's first message
+  ciphertext        String // AEAD output (base64) — opaque to the server
+  deliveredAt       DateTime?
+  createdAt         DateTime  @default(now())
+
+  message         Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  recipientDevice Device  @relation("EnvelopeRecipientDevice", fields: [recipientDeviceId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, recipientDeviceId])
+  // Inbox fetch: a device's undelivered envelopes, oldest first.
+  @@index([recipientDeviceId, deliveredAt, createdAt])
+}
+
+/// Sealed-sender message: an opaque blob addressed only to a recipient device.
+/// Carries NO sender identity and NO conversation id (both are inside the sealed
+/// payload) — the server learns only which device should receive it.
+model SealedMessage {
+  id                String    @id @default(cuid())
+  recipientDeviceId String
+  sealed            String // crypto_box_seal output (base64) — opaque to the server
+  deliveredAt       DateTime?
+  createdAt         DateTime  @default(now())
+
+  recipientDevice Device @relation(fields: [recipientDeviceId], references: [id], onDelete: Cascade)
+
+  @@index([recipientDeviceId, deliveredAt, createdAt])
+}
+
+enum ReceiptState {
+  DELIVERED
+  READ
+}
+
+/// Per-user receipt (delivered/read). Read receipts can be disabled in privacy
+/// settings — when off, the client simply never emits READ receipts.
+model MessageReceipt {
+  id        String       @id @default(cuid())
+  messageId String
+  userId    String
+  state     ReceiptState
+  at        DateTime     @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, state])
+  @@index([messageId])
+}
+
+/// Encrypted file/image. The blob in object storage is ciphertext; the per-file
+/// key travels INSIDE the E2EE message body, never here.
+model Attachment {
+  id        String   @id @default(cuid())
+  messageId String
+  blobKey   String   @unique // object-storage key of the encrypted blob
+  byteSize  Int // size of the ciphertext blob
+  createdAt DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Auth sessions
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Rotating refresh tokens. Only a hash of the token is stored; rotation on use
+/// detects token theft (a reused old token revokes the family).
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  deviceId  String?
+  tokenHash String    @unique // SHA-256 of the opaque refresh token
+  family    String // rotation family id; reuse of a rotated token revokes the family
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([family])
+}
+
+/// Opaque, client-encrypted chat backup (identity keys, ratchet sessions, and the
+/// decrypted message log) wrapped with a user-chosen passphrase. The server stores
+/// one per user and CANNOT read it.
+model Backup {
+  userId    String   @id
+  blob      String // passphrase-encrypted backup (base64) — opaque to the server
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
