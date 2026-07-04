@@ -48,6 +48,9 @@ jobs:
       # the `server /data` command the official image needs, and `bitnami/minio` was
       # removed from Docker Hub. It's started as an explicit step below instead.
     env:
+      # The e2e suite IS a test run: this relaxes the strict credential rate limits
+      # (which stay enforced in dev + prod) and keeps cookies non-secure over http.
+      NODE_ENV: test
       DATABASE_URL: postgresql://securechat:securechat_ci@localhost:5432/securechat?schema=public
       REDIS_URL: redis://localhost:6379
       JWT_ACCESS_SECRET: ci-access-secret-which-is-long-enough
